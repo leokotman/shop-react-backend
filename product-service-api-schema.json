@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/product-service.schema.json",
+  "title": "Product Service (mock catalog)",
+  "description": "Paste into PR if OpenAPI/Swagger is not provided. Base path is stage root (e.g. /prod).",
+  "endpoints": {
+    "GET /products": {
+      "response": {
+        "200": { "$ref": "#/$defs/ProductList" }
+      }
+    },
+    "GET /products/{productId}": {
+      "pathParameters": {
+        "productId": {
+          "type": "string",
+          "description": "Product id (UUID in mock data)"
+        }
+      },
+      "responses": {
+        "200": { "$ref": "#/$defs/Product" },
+        "400": {
+          "type": "object",
+          "properties": {
+            "message": { "const": "Missing productId" }
+          },
+          "required": ["message"]
+        },
+        "404": {
+          "type": "object",
+          "properties": {
+            "message": { "const": "Product not found" }
+          },
+          "required": ["message"]
+        }
+      }
+    }
+  },
+  "$defs": {
+    "Product": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "description", "price", "count"],
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "price": { "type": "number" },
+        "count": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "ProductList": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/Product" }
+    }
+  }
+}
