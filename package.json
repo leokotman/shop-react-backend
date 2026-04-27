@@ -16,6 +16,7 @@
     "@types/jest": "30",
     "@types/node": "24.10.1",
     "aws-cdk": "2.1118.4",
+    "dotenv": "16.6.1",
     "esbuild": "0.28.0",
     "jest": "30",
     "ts-jest": "29",
