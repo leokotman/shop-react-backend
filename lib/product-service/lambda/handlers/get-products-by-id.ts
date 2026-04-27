@@ -1,19 +1,26 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-import { findProductById } from '../data/products';
+import { getJoinedProductById } from '../lib/product-repository';
 import { jsonResponse } from '../lib/http';
+import { logIncomingRequest } from '../lib/handler-utils';
 
 export const handler = async (
   event: APIGatewayProxyEvent,
 ): Promise<APIGatewayProxyResult> => {
-  const productId = event.pathParameters?.productId;
-  if (!productId) {
-    return jsonResponse(400, { message: 'Missing productId' });
-  }
+  logIncomingRequest(event);
+  try {
+    const productId = event.pathParameters?.productId;
+    if (!productId) {
+      return jsonResponse(400, { message: 'Missing productId' });
+    }
 
-  const product = findProductById(productId);
-  if (!product) {
-    return jsonResponse(404, { message: 'Product not found' });
-  }
+    const product = await getJoinedProductById(productId);
+    if (!product) {
+      return jsonResponse(404, { message: 'Product not found' });
+    }
 
-  return jsonResponse(200, product);
+    return jsonResponse(200, product);
+  } catch (err) {
+    console.error('getProductsById error', err);
+    return jsonResponse(500, { message: 'Internal server error' });
+  }
 };
