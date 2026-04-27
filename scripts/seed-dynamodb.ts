@@ -1,17 +1,24 @@
 /**
  * Fills DynamoDB `products` and `stock` tables with sample rows.
  *
- * Usage (after deploy — copy table names from `cdk deploy` outputs):
- *   PRODUCTS_TABLE_NAME=... STOCK_TABLE_NAME=... npm run seed:dynamodb
+ * Table names (from CDK / CloudFormation stack Outputs):
+ *   - Put `PRODUCTS_TABLE_NAME` and `STOCK_TABLE_NAME` in `.env.local` (gitignored), or
+ *   - Export them in the shell: `PRODUCTS_TABLE_NAME=... STOCK_TABLE_NAME=... npm run seed:dynamodb`
  *
- * Requires AWS credentials with dynamodb:PutItem (or TransactWriteItems) on both tables.
+ * Requires AWS credentials with dynamodb:TransactWriteItems on both tables.
  */
+import { resolve } from 'node:path';
+import { config } from 'dotenv';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import {
   DynamoDBDocumentClient,
   TransactWriteCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { PRODUCTS } from '../lib/product-service/lambda/data/products';
+
+// Node does not load .env files by itself — same as Lambdas.
+config({ path: resolve(process.cwd(), '.env') });
+config({ path: resolve(process.cwd(), '.env.local'), override: true });
 
 const productsTable = process.env.PRODUCTS_TABLE_NAME;
 const stockTable = process.env.STOCK_TABLE_NAME;
