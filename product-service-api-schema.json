@@ -1,12 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://example.com/product-service.schema.json",
-  "title": "Product Service (mock catalog)",
-  "description": "Paste into PR if OpenAPI/Swagger is not provided. Base path is stage root (e.g. /prod).",
+  "title": "Product Service (DynamoDB)",
+  "description": "Base URL includes stage (e.g. ...amazonaws.com/prod/). GET responses join products and stock.",
   "endpoints": {
     "GET /products": {
       "response": {
-        "200": { "$ref": "#/$defs/ProductList" }
+        "200": { "$ref": "#/$defs/ProductList" },
+        "500": { "$ref": "#/$defs/ErrorMessage" }
       }
     },
     "GET /products/{productId}": {
@@ -31,11 +32,36 @@
             "message": { "const": "Product not found" }
           },
           "required": ["message"]
+        },
+        "500": { "$ref": "#/$defs/ErrorMessage" }
+      }
+    },
+    "POST /products": {
+      "requestBody": {
+        "type": "object",
+        "required": ["title", "price", "count"],
+        "properties": {
+          "title": { "type": "string", "minLength": 1 },
+          "description": { "type": "string" },
+          "price": { "type": "integer", "minimum": 0 },
+          "count": { "type": "integer", "minimum": 0 }
         }
+      },
+      "responses": {
+        "201": { "$ref": "#/$defs/Product" },
+        "400": { "$ref": "#/$defs/ErrorMessage" },
+        "500": { "$ref": "#/$defs/ErrorMessage" }
       }
     }
   },
   "$defs": {
+    "ErrorMessage": {
+      "type": "object",
+      "properties": {
+        "message": { "type": "string" }
+      },
+      "required": ["message"]
+    },
     "Product": {
       "type": "object",
       "additionalProperties": false,
