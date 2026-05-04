@@ -1,5 +1,6 @@
 import * as path from 'path';
 import * as apigateway from 'aws-cdk-lib/aws-apigateway';
+import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as cdk from 'aws-cdk-lib';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
@@ -11,7 +12,27 @@ export class ProductServiceStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
+    const productsTable = new dynamodb.Table(this, 'ProductsTable', {
+      partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+
+    const stockTable = new dynamodb.Table(this, 'StockTable', {
+      partitionKey: {
+        name: 'product_id',
+        type: dynamodb.AttributeType.STRING,
+      },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+
     const lambdaDir = path.join(__dirname, 'lambda');
+
+    const tableEnv = {
+      PRODUCTS_TABLE_NAME: productsTable.tableName,
+      STOCK_TABLE_NAME: stockTable.tableName,
+    };
 
     const getProductsListFn = new nodejs.NodejsFunction(
       this,
@@ -23,6 +44,7 @@ export class ProductServiceStack extends cdk.Stack {
         timeout: cdk.Duration.seconds(10),
         entry: path.join(lambdaDir, 'handlers/get-products-list.ts'),
         handler: 'handler',
+        environment: tableEnv,
       },
     );
 
@@ -36,15 +58,33 @@ export class ProductServiceStack extends cdk.Stack {
         timeout: cdk.Duration.seconds(10),
         entry: path.join(lambdaDir, 'handlers/get-products-by-id.ts'),
         handler: 'handler',
+        environment: tableEnv,
       },
     );
+
+    const createProductFn = new nodejs.NodejsFunction(this, 'CreateProduct', {
+      functionName: 'createProduct',
+      runtime: lambda.Runtime.NODEJS_22_X,
+      memorySize: 256,
+      timeout: cdk.Duration.seconds(10),
+      entry: path.join(lambdaDir, 'handlers/create-product.ts'),
+      handler: 'handler',
+      environment: tableEnv,
+    });
+
+    productsTable.grantReadData(getProductsListFn);
+    stockTable.grantReadData(getProductsListFn);
+    productsTable.grantReadData(getProductsByIdFn);
+    stockTable.grantReadData(getProductsByIdFn);
+    productsTable.grantWriteData(createProductFn);
+    stockTable.grantWriteData(createProductFn);
 
     const api = new apigateway.RestApi(this, 'ProductServiceApi', {
       restApiName: 'Product Service',
       description: 'HTTP API for product catalog',
       defaultCorsPreflightOptions: {
         allowOrigins: apigateway.Cors.ALL_ORIGINS,
-        allowMethods: ['GET', 'OPTIONS'],
+        allowMethods: ['GET', 'POST', 'OPTIONS'],
         allowHeaders: [
           'Content-Type',
           'X-Amz-Date',
@@ -62,6 +102,10 @@ export class ProductServiceStack extends cdk.Stack {
       'GET',
       new apigateway.LambdaIntegration(getProductsListFn),
     );
+    products.addMethod(
+      'POST',
+      new apigateway.LambdaIntegration(createProductFn),
+    );
 
     const productById = products.addResource('{productId}');
     productById.addMethod(
@@ -78,7 +122,17 @@ export class ProductServiceStack extends cdk.Stack {
 
     new cdk.CfnOutput(this, 'ProductServiceProductsUrl', {
       value: `${api.url}products`,
-      description: 'GET /products',
+      description: 'GET /products, POST /products',
+    });
+
+    new cdk.CfnOutput(this, 'ProductsTableName', {
+      value: productsTable.tableName,
+      description: 'DynamoDB products table (for seed script / AWS Console)',
+    });
+
+    new cdk.CfnOutput(this, 'StockTableName', {
+      value: stockTable.tableName,
+      description: 'DynamoDB stock table (for seed script / AWS Console)',
     });
   }
 }
