@@ -2,12 +2,18 @@ import type { S3Event, S3EventRecord } from 'aws-lambda';
 import { Readable } from 'stream';
 
 const mockSend = jest.fn();
+const mockSendMessage = jest.fn();
 
 jest.mock('@aws-sdk/client-s3', () => ({
   S3Client: jest.fn(() => ({ send: mockSend })),
   GetObjectCommand: jest.fn(),
   CopyObjectCommand: jest.fn(),
   DeleteObjectCommand: jest.fn(),
+}));
+
+jest.mock('@aws-sdk/client-sqs', () => ({
+  SQSClient: jest.fn(() => ({ send: mockSendMessage })),
+  SendMessageCommand: jest.fn((args) => args),
 }));
 
 jest.mock('csv-parser', () => {
@@ -42,7 +48,11 @@ describe('importFileParser', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    process.env = { ...OLD_ENV, IMPORT_BUCKET_NAME: 'test-bucket' };
+    process.env = {
+      ...OLD_ENV,
+      IMPORT_BUCKET_NAME: 'test-bucket',
+      CATALOG_ITEMS_QUEUE_URL: 'https://sqs.us-east-1.amazonaws.com/123/catalogItemsQueue',
+    };
   });
 
   afterAll(() => {
