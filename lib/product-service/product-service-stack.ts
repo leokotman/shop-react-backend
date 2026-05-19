@@ -4,10 +4,15 @@ import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as cdk from 'aws-cdk-lib';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
+import * as sns from 'aws-cdk-lib/aws-sns';
+import * as subs from 'aws-cdk-lib/aws-sns-subscriptions';
+import * as sqs from 'aws-cdk-lib/aws-sqs';
+import { SqsEventSource } from 'aws-cdk-lib/aws-lambda-event-sources';
 import { Construct } from 'constructs';
 
 export class ProductServiceStack extends cdk.Stack {
   public readonly apiUrl: string;
+  public readonly catalogItemsQueue: sqs.Queue;
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
@@ -79,6 +84,68 @@ export class ProductServiceStack extends cdk.Stack {
     productsTable.grantWriteData(createProductFn);
     stockTable.grantWriteData(createProductFn);
 
+    const catalogItemsQueue = new sqs.Queue(this, 'CatalogItemsQueue', {
+      queueName: 'catalogItemsQueue',
+      visibilityTimeout: cdk.Duration.seconds(30),
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+    this.catalogItemsQueue = catalogItemsQueue;
+
+    const createProductTopic = new sns.Topic(this, 'CreateProductTopic', {
+      topicName: 'createProductTopic',
+      displayName: 'Create Product Topic',
+    });
+
+    const notificationEmail =
+      process.env.NOTIFICATION_EMAIL || 'example@example.com';
+    const expensiveProductsEmail =
+      process.env.EXPENSIVE_PRODUCTS_EMAIL || notificationEmail;
+
+    // All products subscription
+    createProductTopic.addSubscription(
+      new subs.EmailSubscription(notificationEmail),
+    );
+
+    if (expensiveProductsEmail !== notificationEmail) {
+      // High-price products subscription with filter policy
+      createProductTopic.addSubscription(
+        new subs.EmailSubscription(expensiveProductsEmail, {
+          filterPolicy: {
+            price: sns.SubscriptionFilter.numericFilter({
+              greaterThanOrEqualTo: 100,
+            }),
+          },
+        }),
+      );
+    }
+
+    const catalogBatchProcessFn = new nodejs.NodejsFunction(
+      this,
+      'CatalogBatchProcess',
+      {
+        functionName: 'catalogBatchProcess',
+        runtime: lambda.Runtime.NODEJS_22_X,
+        memorySize: 256,
+        timeout: cdk.Duration.seconds(30),
+        entry: path.join(lambdaDir, 'handlers/catalog-batch-process.ts'),
+        handler: 'handler',
+        environment: {
+          ...tableEnv,
+          CREATE_PRODUCT_TOPIC_ARN: createProductTopic.topicArn,
+        },
+      },
+    );
+
+    catalogBatchProcessFn.addEventSource(
+      new SqsEventSource(catalogItemsQueue, {
+        batchSize: 5,
+      }),
+    );
+
+    productsTable.grantWriteData(catalogBatchProcessFn);
+    stockTable.grantWriteData(catalogBatchProcessFn);
+    createProductTopic.grantPublish(catalogBatchProcessFn);
+
     const api = new apigateway.RestApi(this, 'ProductServiceApi', {
       restApiName: 'Product Service',
       description: 'HTTP API for product catalog',
@@ -133,6 +200,16 @@ export class ProductServiceStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'StockTableName', {
       value: stockTable.tableName,
       description: 'DynamoDB stock table (for seed script / AWS Console)',
+    });
+
+    new cdk.CfnOutput(this, 'CatalogItemsQueueUrl', {
+      value: catalogItemsQueue.queueUrl,
+      description: 'SQS queue URL for catalog import events',
+    });
+
+    new cdk.CfnOutput(this, 'CreateProductTopicArn', {
+      value: createProductTopic.topicArn,
+      description: 'SNS topic ARN for created products',
     });
   }
 }
