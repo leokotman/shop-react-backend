@@ -10,6 +10,7 @@ import { Construct } from 'constructs';
 
 export interface ImportServiceStackProps extends cdk.StackProps {
   catalogItemsQueue: sqs.IQueue;
+  basicAuthorizerFunction: lambda.Function;
 }
 
 export class ImportServiceStack extends cdk.Stack {
@@ -34,7 +35,7 @@ export class ImportServiceStack extends cdk.Stack {
 
     const lambdaDir = path.join(__dirname, 'lambda');
 
-    const { catalogItemsQueue } = props;
+    const { catalogItemsQueue, basicAuthorizerFunction } = props;
 
     const bucketEnv = {
       IMPORT_BUCKET_NAME: importBucket.bucketName,
@@ -100,6 +101,13 @@ export class ImportServiceStack extends cdk.Stack {
       },
     });
 
+    // Create Lambda authorizer
+    const authorizer = new apigateway.TokenAuthorizer(this, 'BasicAuthorizer', {
+      handler: basicAuthorizerFunction,
+      identitySource: 'method.request.header.Authorization',
+      validationRegex: '^Basic ',
+    });
+
     const importResource = api.root.addResource('import');
     importResource.addMethod(
       'GET',
@@ -108,6 +116,8 @@ export class ImportServiceStack extends cdk.Stack {
         requestParameters: {
           'method.request.querystring.name': true,
         },
+        authorizer,
+        authorizationType: apigateway.AuthorizationType.CUSTOM,
       },
     );
 

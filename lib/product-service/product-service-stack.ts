@@ -7,14 +7,21 @@ import * as nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as sns from 'aws-cdk-lib/aws-sns';
 import * as subs from 'aws-cdk-lib/aws-sns-subscriptions';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
+import * as cognito from 'aws-cdk-lib/aws-cognito';
 import { SqsEventSource } from 'aws-cdk-lib/aws-lambda-event-sources';
 import { Construct } from 'constructs';
+
+export interface ProductServiceStackProps extends cdk.StackProps {
+  cognitoAuthorizerFunction?: lambda.Function;
+}
 
 export class ProductServiceStack extends cdk.Stack {
   public readonly apiUrl: string;
   public readonly catalogItemsQueue: sqs.Queue;
+  public readonly userPool: cognito.UserPool;
+  public readonly userPoolClient: cognito.IUserPoolClient;
 
-  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+  constructor(scope: Construct, id: string, props?: ProductServiceStackProps) {
     super(scope, id, props);
 
     const productsTable = new dynamodb.Table(this, 'ProductsTable', {
@@ -165,10 +172,33 @@ export class ProductServiceStack extends cdk.Stack {
     });
 
     const products = api.root.addResource('products');
+    
+    // Create Cognito authorizer if provided
+    let cognitoAuthorizer: apigateway.TokenAuthorizer | undefined = undefined;
+    if (props?.cognitoAuthorizerFunction) {
+      cognitoAuthorizer = new apigateway.TokenAuthorizer(this, 'CognitoAuthorizer', {
+        handler: props.cognitoAuthorizerFunction,
+        identitySource: 'method.request.header.Authorization',
+        validationRegex: '^Bearer ',
+      });
+    }
+    
+    // Add GET /products (with Cognito authorization if available)
+    const getProductsMethodOptions: any = {
+      // methodResponses: [{ statusCode: '200' }],
+    };
+    
+    if (cognitoAuthorizer) {
+      getProductsMethodOptions.authorizer = cognitoAuthorizer;
+      getProductsMethodOptions.authorizationType = apigateway.AuthorizationType.CUSTOM;
+    }
+    
     products.addMethod(
       'GET',
       new apigateway.LambdaIntegration(getProductsListFn),
+      getProductsMethodOptions,
     );
+    
     products.addMethod(
       'POST',
       new apigateway.LambdaIntegration(createProductFn),
@@ -179,6 +209,62 @@ export class ProductServiceStack extends cdk.Stack {
       'GET',
       new apigateway.LambdaIntegration(getProductsByIdFn),
     );
+
+    // Setup Cognito User Pool for additional task
+    const userPool = new cognito.UserPool(this, 'ProductServiceUserPool', {
+      userPoolName: 'ProductServiceUserPool',
+      signInAliases: {
+        email: true,
+      },
+      autoVerify: {
+        email: true,
+      },
+      standardAttributes: {
+        email: {
+          required: true,
+          mutable: true,
+        },
+      },
+      passwordPolicy: {
+        minLength: 8,
+        requireLowercase: true,
+        requireUppercase: false,
+        requireDigits: true,
+        requireSymbols: false,
+      },
+      selfSignUpEnabled: true,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    const userPoolClient = userPool.addClient('ProductServiceClient', {
+      userPoolClientName: 'ProductServiceClient',
+      authFlows: {
+        userPassword: true,
+        adminUserPassword: true,
+        custom: true,
+      },
+      oAuth: {
+        flows: {
+          authorizationCodeGrant: true,
+        },
+        scopes: [
+          cognito.OAuthScope.EMAIL,
+          cognito.OAuthScope.OPENID,
+          cognito.OAuthScope.PROFILE,
+        ],
+        callbackUrls: ['http://localhost:3000/', 'http://localhost:5173/'],
+        logoutUrls: ['http://localhost:3000/', 'http://localhost:5173/'],
+      },
+    });
+
+    const domain = userPool.addDomain('ProductServiceDomain', {
+      cognitoDomain: {
+        domainPrefix: `product-service-${this.account}`,
+      },
+    });
+
+    this.userPool = userPool;
+    this.userPoolClient = userPoolClient;
 
     this.apiUrl = api.urlForPath('/');
 
@@ -210,6 +296,27 @@ export class ProductServiceStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'CreateProductTopicArn', {
       value: createProductTopic.topicArn,
       description: 'SNS topic ARN for created products',
+    });
+
+    // Cognito outputs
+    new cdk.CfnOutput(this, 'CognitoUserPoolId', {
+      value: userPool.userPoolId,
+      description: 'Cognito User Pool ID',
+    });
+
+    new cdk.CfnOutput(this, 'CognitoUserPoolClientId', {
+      value: userPoolClient.userPoolClientId,
+      description: 'Cognito User Pool Client ID',
+    });
+
+    new cdk.CfnOutput(this, 'CognitoHostedUiUrl', {
+      value: `https://${domain.domainName}.auth.${this.region}.amazoncognito.com/login?client_id=${userPoolClient.userPoolClientId}&response_type=token&redirect_uri=http://localhost:3000/`,
+      description: 'Cognito Hosted UI Login URL for localhost:3000',
+    });
+
+    new cdk.CfnOutput(this, 'CognitoHostedUiUrl5173', {
+      value: `https://${domain.domainName}.auth.${this.region}.amazoncognito.com/login?client_id=${userPoolClient.userPoolClientId}&response_type=token&redirect_uri=http://localhost:5173/`,
+      description: 'Cognito Hosted UI Login URL for localhost:5173 (Vite)',
     });
   }
 }
