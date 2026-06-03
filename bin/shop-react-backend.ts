@@ -17,11 +17,9 @@ const authorizationServiceStack = new AuthorizationServiceStack(app, 'Authorizat
 
 const productServiceStack = new ProductServiceStack(app, 'ProductServiceStack', {
   env,
-  cognitoAuthorizerFunction: authorizationServiceStack.cognitoAuthorizerFunction,
 });
 
 new ImportServiceStack(app, 'ImportServiceStack', {
   env,
   catalogItemsQueue: productServiceStack.catalogItemsQueue,
-  basicAuthorizerFunction: authorizationServiceStack.basicAuthorizerFunction,
 });

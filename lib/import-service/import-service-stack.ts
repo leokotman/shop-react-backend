@@ -10,7 +10,6 @@ import { Construct } from 'constructs';
 
 export interface ImportServiceStackProps extends cdk.StackProps {
   catalogItemsQueue: sqs.IQueue;
-  basicAuthorizerFunction: lambda.Function;
 }
 
 export class ImportServiceStack extends cdk.Stack {
@@ -35,7 +34,13 @@ export class ImportServiceStack extends cdk.Stack {
 
     const lambdaDir = path.join(__dirname, 'lambda');
 
-    const { catalogItemsQueue, basicAuthorizerFunction } = props;
+    const { catalogItemsQueue } = props;
+
+    const basicAuthorizerFunction = lambda.Function.fromFunctionName(
+      this,
+      'BasicAuthorizerImported',
+      'basicAuthorizer',
+    );
 
     const bucketEnv = {
       IMPORT_BUCKET_NAME: importBucket.bucketName,
