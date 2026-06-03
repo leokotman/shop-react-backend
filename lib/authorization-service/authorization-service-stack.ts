@@ -1,0 +1,85 @@
+import * as path from 'path';
+import * as cdk from 'aws-cdk-lib';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as nodejs from 'aws-cdk-lib/aws-lambda-nodejs';
+import { Construct } from 'constructs';
+import * as fs from 'fs';
+
+export class AuthorizationServiceStack extends cdk.Stack {
+  public readonly basicAuthorizerFunction: lambda.Function;
+  public readonly cognitoAuthorizerFunction: lambda.Function;
+
+  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+    super(scope, id, props);
+
+    const lambdaDir = path.join(__dirname, 'lambda');
+
+    // Load credentials from .env file
+    const authCredentials = this.loadCredentialsFromEnv();
+
+    const basicAuthorizerFn = new nodejs.NodejsFunction(
+      this,
+      'BasicAuthorizer',
+      {
+        functionName: 'basicAuthorizer',
+        runtime: lambda.Runtime.NODEJS_22_X,
+        memorySize: 256,
+        timeout: cdk.Duration.seconds(10),
+        entry: path.join(lambdaDir, 'basic-authorizer.ts'),
+        environment: authCredentials,
+      }
+    );
+
+    // Create Cognito authorizer lambda
+    const cognitoAuthorizerFn = new nodejs.NodejsFunction(
+      this,
+      'CognitoAuthorizer',
+      {
+        functionName: 'cognitoAuthorizer',
+        runtime: lambda.Runtime.NODEJS_22_X,
+        memorySize: 256,
+        timeout: cdk.Duration.seconds(10),
+        entry: path.join(lambdaDir, 'cognito-authorizer.ts'),
+      }
+    );
+
+    this.basicAuthorizerFunction = basicAuthorizerFn;
+    this.cognitoAuthorizerFunction = cognitoAuthorizerFn;
+  }
+
+  private loadCredentialsFromEnv(): Record<string, string> {
+    try {
+      // Try to load from .env file in the project root
+      const envFilePath = path.join(__dirname, '../../.env');
+      if (fs.existsSync(envFilePath)) {
+        const envContent = fs.readFileSync(envFilePath, 'utf-8');
+        // Parse credential entries as Lambda environment variables.
+        const credentials = envContent
+          .split('\n')
+          .map(line => line.trim())
+          .filter(line => line && !line.startsWith('#') && line.includes('='))
+          .reduce<Record<string, string>>((result, line) => {
+            const [rawKey, ...rawValue] = line.split('=');
+            const key = rawKey.trim();
+            const value = rawValue.join('=').trim();
+
+            if (key && value) {
+              result[key] = value;
+            }
+
+            return result;
+          }, {});
+        
+        if (Object.keys(credentials).length > 0) {
+          console.log('Loaded credentials from .env file');
+          return credentials;
+        }
+      }
+    } catch (error) {
+      console.warn('Could not read .env file:', error);
+    }
+
+    console.warn('No credentials loaded for basicAuthorizer. Add them to .env before deployment.');
+    return {};
+  }
+}
