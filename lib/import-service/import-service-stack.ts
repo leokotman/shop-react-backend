@@ -105,7 +105,6 @@ export class ImportServiceStack extends cdk.Stack {
     const authorizer = new apigateway.TokenAuthorizer(this, 'BasicAuthorizer', {
       handler: basicAuthorizerFunction,
       identitySource: 'method.request.header.Authorization',
-      validationRegex: '^Basic ',
     });
 
     const importResource = api.root.addResource('import');

@@ -16,7 +16,7 @@ export async function handler(event: any) {
     
     if (authParts.length !== 2 || authParts[0] !== 'Basic') {
       console.log('Invalid authorization header format');
-      throw new Error('Unauthorized');
+      return generatePolicy('anonymous', 'Deny', methodArn);
     }
 
     const base64Credentials = authParts[1];
@@ -25,23 +25,23 @@ export async function handler(event: any) {
     const credentials = Buffer.from(base64Credentials, 'base64').toString('utf-8');
     const [username, password] = credentials.split(':');
 
+    if (!username || !password) {
+      console.log('Malformed basic authorization token');
+      return generatePolicy('anonymous', 'Deny', methodArn);
+    }
+
     console.log(`Attempting to authenticate user: ${username}`);
 
-    // Get credentials from environment
-    const authCredentials = process.env.AUTH_CREDENTIALS || '';
-    console.log('Auth credentials available:', authCredentials.split(',').map(c => c.split('=')[0]).join(', '));
+    const availableUsers = Object.keys(process.env).filter(
+      (key) => !key.startsWith('AWS_') && !key.startsWith('_HANDLER') && !key.startsWith('NODE_')
+    );
+    console.log('Auth credentials available:', availableUsers.join(', '));
 
-    // Check if the provided credentials match any in the environment
-    const credentialPairs = authCredentials.split(',');
-    const isValid = credentialPairs.some(pair => {
-      const [envUsername, envPassword] = pair.split('=');
-      return envUsername === username && envPassword === password;
-    });
+    const isValid = process.env[username] === password;
 
     if (!isValid) {
       console.log(`Access denied for user: ${username}`);
-      // Return 403 Forbidden
-      throw new Error('Forbidden');
+      return generatePolicy(username, 'Deny', methodArn);
     }
 
     console.log(`Access granted for user: ${username}`);
@@ -50,17 +50,8 @@ export async function handler(event: any) {
     return generatePolicy(username, 'Allow', methodArn);
   } catch (error) {
     console.error('Authorization error:', error);
-    
-    // Determine the error code from the message
-    const errorMessage = (error as Error).message || 'Unauthorized';
-    
-    if (errorMessage === 'Forbidden') {
-      // Return 403 policy (actually we need to throw error with specific structure)
-      throw new Error('Forbidden');
-    } else {
-      // Return 401 Unauthorized
-      throw new Error('Unauthorized');
-    }
+
+    throw new Error('Unauthorized');
   }
 }
 

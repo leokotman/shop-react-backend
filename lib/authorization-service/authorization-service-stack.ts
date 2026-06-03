@@ -26,9 +26,7 @@ export class AuthorizationServiceStack extends cdk.Stack {
         memorySize: 256,
         timeout: cdk.Duration.seconds(10),
         entry: path.join(lambdaDir, 'basic-authorizer.ts'),
-        environment: {
-          AUTH_CREDENTIALS: authCredentials,
-        },
+        environment: authCredentials,
       }
     );
 
@@ -49,20 +47,30 @@ export class AuthorizationServiceStack extends cdk.Stack {
     this.cognitoAuthorizerFunction = cognitoAuthorizerFn;
   }
 
-  private loadCredentialsFromEnv(): string {
+  private loadCredentialsFromEnv(): Record<string, string> {
     try {
       // Try to load from .env file in the project root
       const envFilePath = path.join(__dirname, '../../.env');
       if (fs.existsSync(envFilePath)) {
         const envContent = fs.readFileSync(envFilePath, 'utf-8');
-        // Parse the .env file and collect credential lines
+        // Parse credential entries as Lambda environment variables.
         const credentials = envContent
           .split('\n')
           .map(line => line.trim())
           .filter(line => line && !line.startsWith('#') && line.includes('='))
-          .join(',');
+          .reduce<Record<string, string>>((result, line) => {
+            const [rawKey, ...rawValue] = line.split('=');
+            const key = rawKey.trim();
+            const value = rawValue.join('=').trim();
+
+            if (key && value) {
+              result[key] = value;
+            }
+
+            return result;
+          }, {});
         
-        if (credentials) {
+        if (Object.keys(credentials).length > 0) {
           console.log('Loaded credentials from .env file');
           return credentials;
         }
@@ -71,8 +79,7 @@ export class AuthorizationServiceStack extends cdk.Stack {
       console.warn('Could not read .env file:', error);
     }
 
-    // Fallback to default credential
-    console.log('Using default credential');
-    return 'leokotman=TEST_PASSWORD';
+    console.warn('No credentials loaded for basicAuthorizer. Add them to .env before deployment.');
+    return {};
   }
 }
