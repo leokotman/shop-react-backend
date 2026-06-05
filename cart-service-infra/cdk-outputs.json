@@ -1,0 +1,7 @@
+{
+  "CartServiceStack": {
+    "NestApiEndpoint3F51B14E": "https://ek1cddxp8f.execute-api.eu-central-1.amazonaws.com/prod/",
+    "CartServiceApiUrl": "https://ek1cddxp8f.execute-api.eu-central-1.amazonaws.com/prod/",
+    "CartServiceProfileCartUrl": "https://ek1cddxp8f.execute-api.eu-central-1.amazonaws.com/prod/api/profile/cart"
+  }
+}
