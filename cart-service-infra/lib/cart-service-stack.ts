@@ -56,7 +56,7 @@ export class CartServiceStack extends cdk.Stack {
       vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
       securityGroups: [dbSecurityGroup],
       engine: rds.DatabaseInstanceEngine.postgres({
-        version: rds.PostgresEngineVersion.VER_16_3,
+        version: rds.PostgresEngineVersion.VER_16,
       }),
       instanceType: ec2.InstanceType.of(
         ec2.InstanceClass.BURSTABLE3,
